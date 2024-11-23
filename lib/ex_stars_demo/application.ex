@@ -12,6 +12,7 @@ defmodule ExSTARSDemo.Application do
         # Children for all targets
         # Starts a worker by calling: ExSTARSDemo.Worker.start_link(arg)
         # {ExSTARSDemo.Worker, arg},
+        {ExSTARSDemo, [stars_client_name: "term1", stars_client_key: "stars"]}
       ] ++ children(Nerves.Runtime.mix_target())
 
     # See https://hexdocs.pm/elixir/Supervisor.html
