@@ -7,8 +7,8 @@ defmodule ExSTARSDemo do
 
   require Logger
 
-  def gettime() do
-    GenServer.call(__MODULE__, :gettime)
+  def send(message) do
+    GenServer.call(__MODULE__, {:send, message})
   end
 
   def start_link(args) do
@@ -29,56 +29,52 @@ defmodule ExSTARSDemo do
     {:ok,
      %{
        stars_client_name: stars_client_name,
-       stars_client_key: stars_client_key,
-       froms: %{}
+       stars_client_key: stars_client_key
      }}
+  end
+
+  def handle_call({:send, message}, _from, state) do
+    %{stars_client_name: stars_client_name} = state
+    ExSTARS.send(stars_client_name, message)
+    {:reply, :ok, state}
   end
 
   def handle_info({ExSTARS.Client, _, message}, state) do
     %{stars_client_name: stars_client_name} = state
 
-    lines = String.split(message, "\n", trim: true)
-
-    state =
-      Enum.reduce(lines, state, fn line, acc ->
-        cond do
-          # NOTE: `System>term1 ` 始まりなら server response
-          String.starts_with?(line, "System>#{stars_client_name} ") ->
-            line
-            # NOTE: leader の `System>term1 ` を trim
-            |> String.trim_leading("System>#{stars_client_name} ")
-            # NOTE: @gettime 2024-11-23 14:51:59 を `handle_server_response` へ
-            |> handle_server_response(acc)
-
-          true ->
-            handle_unknown_response(line)
-            acc
-        end
-      end)
+    message
+    |> String.split("\n", trim: true)
+    |> Enum.each(fn response -> handle_response(response, stars_client_name) end)
 
     {:noreply, state}
   end
 
-  def handle_call(:gettime, from, state) do
-    %{stars_client_name: stars_client_name} = state
-    ExSTARS.send(stars_client_name, "System gettime")
-    {:noreply, %{state | froms: Map.put(state.froms, :gettime, from)}}
+  def handle_response("System>" <> _ = response, stars_client_name) do
+    response
+    |> String.trim_leading("System>#{stars_client_name} ")
+    |> handle_server_response()
   end
 
-  defp handle_server_response("@gettime " <> time, state) do
-    if is_nil(state.froms.gettime) do
-      state
-    else
-      GenServer.reply(state.froms.gettime, time)
-      %{state | froms: %{gettime: nil}}
-    end
+  def handle_response("Contecnano.ai.ch3>" <> _ = response, stars_client_name) do
+    response
+    |> String.trim_leading("Contecnano.ai.ch3>#{stars_client_name} ")
+    |> handle_contecnano_ai_ch_response(3)
   end
 
-  defp handle_server_response("Ok:", state) do
-    state
+  def handle_response(response, _stars_client_name) do
+    Logger.warning("unhandled response: #{response}")
   end
 
-  defp handle_unknown_response(line) do
-    Logger.warning("unknown response: #{line}")
+  defp handle_server_response("@gettime " <> time) do
+    [date, time] = String.split(time, " ")
+    DateTime.from_iso8601("#{date}T#{time}+09:00")
+  end
+
+  defp handle_server_response(message) do
+    Logger.debug("Unhandled server response: #{message}")
+  end
+
+  defp handle_contecnano_ai_ch_response("@GetValue " <> value, 3 = _ch) do
+    String.to_float(value)
   end
 end
